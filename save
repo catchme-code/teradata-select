@@ -1,0 +1,161 @@
+package kafka.connect;
+
+
+
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+
+
+
+
+
+public class Produce {
+	
+    public static void main(String[] args){
+	   Properties configs = new Properties();
+       configs.put("bootstrap.servers", "localhost:9092"); // kafka host 및 server 설정
+       configs.put("acks", "all");	// 자신이 보낸 메시지에 대해 카프카로부터 확인을 기다리지 않습니다.
+       
+       configs.put("block.on.buffer.full", "true");        // 서버로 보낼 레코드를 버퍼링 할 때 사용할 수 있는 전체 메모리의 바이트수
+       configs.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");   // serialize 설정
+       configs.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer"); // serialize 설정
+   
+       
+       
+       KafkaProducer<String, String> producer = new KafkaProducer<String, String>(configs);
+       
+		String url = "jdbc:teradata://test-94qh72m9ah3hfm1u.env.clearscape.teradata.com";//<호스트명>/DATABASE=<데이터베이스명>
+	    String user = "demo_user";
+	    String password = "tntngusrl";
+		String v = "Hi";
+		int count=0;
+		long time =0;
+		int batch = 1000;
+		long InsertStartTime=0;
+		long InsertEndTime=0;
+		long SelectStartTime=0;
+		long SelectEndTime=0;
+		long SelectStartTime2=0;
+		long SelectEndTime2=0;
+	
+    	Connection connection = null;
+    	PreparedStatement pstmt = null; 
+        	 try 
+               	{	
+        		connection = DriverManager.getConnection(url, user,password);
+        		
+        		//insert 작업
+        		connection.setAutoCommit(false); 
+        		
+        		String insert="INSERT INTO T1 VALUES(?)";
+        		
+			 	pstmt = connection.prepareStatement(insert);
+		
+			 	
+			 	InsertStartTime =System.currentTimeMillis();
+			  	while (time < 1000) {     
+    			for(int i=0;i<batch;i++)  
+    			{
+    				count++;	
+					pstmt.setString(1, v+count);
+					pstmt.addBatch();
+
+				}
+    			pstmt.executeBatch();
+    			
+    			
+    			time = System.currentTimeMillis()-InsertStartTime;
+    			batch=(int)((1000.0/time)*batch);
+			  	}
+
+			 	InsertEndTime =System.currentTimeMillis();
+			 	connection.commit();
+
+			 	String mesege=(InsertEndTime-InsertStartTime)/1000+"초동안 저장된 갯수는"+count+"개 입니다.";
+			        
+		        producer.send(new ProducerRecord<String, String> ("test", mesege ));
+			 	
+			 	
+			 	//select 작업
+		        
+		        
+			 	count=0;
+			 
+			 	String select ="SELECT top 1000000 str FROM 1"; 
+			 	
+			 	PreparedStatement pstmt2 = connection.prepareStatement(select);
+
+				SelectStartTime=System.currentTimeMillis();  
+			 	ResultSet re  =pstmt2.executeQuery();
+				SelectEndTime=System.currentTimeMillis();
+			
+			 	
+
+                String mesege2="백만건 조회 시간은: "+(SelectEndTime-SelectStartTime)/1000+"초 입니다";
+		        
+		        producer.send(new ProducerRecord<String, String> ("test", mesege2 ));
+		        
+		        re.close();
+			 	pstmt2.close();
+			 	
+		        count=0;  
+				 
+			 	String select2 ="select top 10000000 str from T1";
+			 	PreparedStatement pstmt3 = connection.prepareStatement(select2);
+			 	
+			 	SelectStartTime2=System.currentTimeMillis(); 
+			 	ResultSet re2  =pstmt3.executeQuery();
+			 	SelectEndTime2=System.currentTimeMillis();
+
+			 
+                String mesege3="천만건 조회 시간은: "+(SelectEndTime2-SelectStartTime2)/1000+"초 입니다";
+		        
+		        producer.send(new ProducerRecord<String, String> ("test", mesege3));
+		 
+		    	re2.close();
+			 	pstmt3.close();
+		
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                	}
+                
+                    finally {
+                    // 리소스 해제
+                    try {
+                        if (pstmt != null) pstmt.close();
+                        if (connection != null) connection.close();
+                    } catch (SQLException e) {
+                        System.err.println("Failed to close resources:" + e.getMessage());
+                    }
+                }
+
+        producer.flush();
+
+        producer.close();
+        
+    	
+    }
+}
+
+    	
+
+
+    
